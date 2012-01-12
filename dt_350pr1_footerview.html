@@ -1,0 +1,905 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+	<title>YUI 3 - DT FooterView Test</title>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<link type="text/css" rel="stylesheet" href="http://yui.yahooapis.com/3.4.1/build/cssfonts/fonts-min.css" />  
+
+	<link type="text/css" rel="stylesheet" href="http://yui.yahooapis.com/3.4.1/build/datatable-base/assets/datatable-base-core.css" />  
+	<link type="text/css" rel="stylesheet" href="http://yui.yahooapis.com/3.4.1/build/datatable-base/assets/skins/sam//datatable-base-skin.css" />  
+	<link type="text/css" rel="stylesheet" href="http://yui.yahooapis.com/3.4.1/build/datatable-base/assets/skins/sam//datatable-base-skin.css" />  
+	<link type="text/css" rel="stylesheet" href="http://yui.yahooapis.com/3.4.1/build/datatable-base/assets/skins/sam//datatable-base.css" />  
+
+	<!--  my hacked together CSS for the footer   -->
+	<link type="text/css" rel="stylesheet" href="../dt_foot_plugin_new.css" />    
+
+	<link href="../../syntax/styles/shCore.css" rel="stylesheet" type="text/css" />
+	<link href="../../syntax/styles/shThemeDefault.css" rel="stylesheet" type="text/css" />
+	<link href="../../ba_example.css" rel="stylesheet" type="text/css" />
+
+</head>
+
+<body class="yui3-skin-sam">
+
+	<script src="http://yui.yahooapis.com/3.5.0pr1/build/yui/yui-min.js"></script>
+
+	<script type="text/javascript" src="../../syntax/scripts/shCore.js"></script>
+	<script type="text/javascript" src="../../syntax/scripts/shBrushJScript.js"></script>
+	<script type="text/javascript" src="../../syntax/scripts/shBrushXml.js"></script>
+
+<script type="text/javascript">
+YUI({
+    gallery: 'gallery-2012.01.04-22-09'	// gallery build of 3.5.0PR1 ...,
+}).use('gallery-datatable-350-preview', 'view', 'datatype',  function(Y) {
+ 
+ 
+// ==================  define the footerview ...  =========================================
+
+	var myFooterView = Y.Base.create( 'tableFooter', Y.View, [], {
+		
+	//
+	//  Define some templates for the TFOOT, TR, TH, TD and default format stuff ...
+	//	
+		TD_TEMPLATE: '<td><div class="{linerClass}">{content}</div></td>',
+
+		TH_TEMPLATE: '<th colspan="{colspan}"><div class="{linerClass}">{content}</div></th>',
+
+		TR_TEMPLATE: '<tr>{th_content}{td_content}</tr>',
+
+		TFOOT_TEMPLATE: '<tfoot class="{footClass}">{content}</tfoot>',
+
+		dateFormat : "%D",
+		timeFormat : "%T",
+		
+		fnReplace : Y.Lang.sub,
+
+		/**
+		Calculates a DataSet summary item defined in 'calc' for the given colKey.
+		Currently, the 'calc' is set to lowercase ...
+		
+		Example calc settings are as follows (for given 'colKey');
+		
+			{sum}		Calculate the arithmetic sum of dataset	 
+			{min}		Calculate the minimum value within the dataset 	 
+			{max}		Calculate the maximum value within the dataset 	 
+			{avg}		Calculate the arithmetic average of the datset 	 
+			(synonyms are {mean}, {average})			
+		
+		also, non-dataset iterating calcs are;
+			{row_count}	Returns the number of rows in the dataset
+			{col_count} Returns the number of columns in the dataset (no visibility check)
+			{date}		Returns the current date (this.dateFormat setting)	
+			{time}		Returns the current time (this.timeFormat setting)	
+			
+		 // TODO:  Consider one call to this (with mult keys) for one loop thru only ...
+		 
+		 // not a really possible use case, but ...
+		 ? whatif user tries to enter calc='this is a {sum} and {min} value' ??
+
+		@method calcDatasetValue
+		@param {String} colKey  The column key name to be calculated
+		@param {String} calc    A recognizable calc setting from above 
+		@return {Float} the return value		 
+		**/
+		calcDatasetValue: function(colKey, calc) {
+			
+			var rs_data = this.source.get("data"),    // this is a modelList currently
+				lcalc = calc.toLowerCase(),
+				avg = lcalc.search(/{average}|{avg}|{mean}/i),  // a flag for knowing if averaging is to be done
+				rcalc = 0, 
+				rmin = this._realBig,
+				rmax = -this._realBig;
+		//
+		//  initial case, if non-summary item, just return it!
+		//   Note: these probably shouldn't be used in a TD column, 
+		//        but sometimes people may do this ...
+		//
+			if ( lcalc.search(/{row_count}/) !== -1 ) 	return rs_data.size();
+			if ( lcalc.search(/{col_count}/) !== -1  ) 	return this.source.get("columns").length;
+			if ( lcalc.search(/{date}/) !== -1  )		return Y.DataType.Date.format( new Date(), { format: this.get("dateFormat") || this.dateFormat });
+			if ( lcalc.search(/{time}/) !== -1  )		return Y.DataType.Date.format( new Date(), { format: this.get("timeFormat") || this.timeFormat });	
+				
+		//
+		//  If a min or max, set initial value to first
+		//				
+			if ( lcalc.search(/{min}|{max}/) !== -1 ) 
+				rcalc = parseFloat(rs_data.item(0).get(colKey) );
+			
+		//
+		//  March thru the dataset, operating on the 'calc' item
+		//
+			rs_data.each( function(item) {
+				
+				var rflt = parseFloat( item.get(colKey) );
+				
+				if ( lcalc.search(/{sum}/) !== -1 || avg !==-1 )  
+					rcalc += rflt;
+					
+				else if ( lcalc.search(/{min}/) !== -1 )
+					rcalc = Math.min( rcalc, rflt );
+					
+				else if ( lcalc.search(/{max}/) !== -1 )
+					rcalc = Math.max( rcalc, rflt );
+					
+				else
+					rcalc = calc;
+			});
+			
+		//
+		//  Post-process the data (mostly for averages) prior to returning 
+		//	
+			if ( avg !== -1 ) 
+				rcalc = ( !rs_data.isEmpty() ) ? ( parseFloat(rcalc)/parseFloat(rs_data.size()) ) : 0;
+				
+			return parseFloat(rcalc);	
+		},
+
+
+
+		formatFootCell: function( col, foot_col ) {
+
+			if ( !foot_col.calc ) return '';
+						
+			var rval = this.calcDatasetValue( foot_col.key, foot_col.calc );	// get the calculated item ...
+
+		//
+		// See if a custom formatter is defined ...
+		//   first check the footer.column for a formatter,
+		//   then use the column.formatter,
+		//   or none
+		// TODO: allow standard named formatters and/or function names {String} 
+		//
+			var fmtr = ( foot_col.formatter && Y.Lang.isFunction(foot_col.formatter) ) ? foot_col.formatter : 
+					   ( col.formatter && Y.Lang.isFunction(col.formatter) ) ? col.formatter : null;
+					   
+  			rval = ( fmtr ) ? fmtr.call( this, {value:rval} ) : rval; 	
+  
+		// this is clunky, but works ... 
+		//  add all recognized 'calc' tags (and their uppercase) to replacer object ...
+			var strs = "min,max,sum,avg,average,mean,row_count,col_count,date,time",
+				all_strs = strs.split(","),	
+				repl_obj = {};
+				
+			Y.Array.each(all_strs,function(item){
+				repl_obj[ item ] = rval;
+				repl_obj[ item.toUpperCase() ] = rval;
+			});
+		
+			return this.fnReplace( foot_col.calc, repl_obj); 			
+		},
+
+		/**
+		Called when view is initialized.  
+		Consider building the TFOOT here instead of in .render() ?
+		
+		@method initializer
+		@param {Object} config
+		@protected
+		**/
+		initializer: function(config) {
+			config || (config={});
+			this.source = config.source;
+			// Y.log('in init');
+		},
+
+
+		/**
+		Bind subscriptions onto the parent Model and/or other views ....
+		// TODO: Don't really have enough base sugar to do anything yet   
+		
+		@method bindUI
+		@protected
+		**/
+		bindUI: function() {
+	// probably should do something like on('dataChange', refreshfooter );
+	//  ... but the DT re-factor is so new, I don't know yet what the 
+	//      standard attributes / events are !
+	//
+	//		if (this.source) 
+ 	//		this.source.on('dataChange', Y.bind('_afterDataChange', this) );
+		},
+		
+		_afterDataChange: function() {
+			Y.log('afterDataChange');
+		},
+		
+		
+		
+		/**
+		Renders the TFOOT element, filling in dataset totals ...
+
+		@method render
+		@protected
+		**/
+		render: function() {
+
+			var table_cont = this.get('container'),
+				table = Y.one(table_cont),
+				table_obj = this.source,
+				columns = table_obj.get('columns'), 
+				rs_data = this.source.get("data"),  
+				foot_cfg = table_obj.get('footer'),
+				foot_cols = foot_cfg.columns,
+				tfoot_th = tfoot_td = '', 
+				tfoot, cspan = 1, i=0;
+			
+		// define a default replacer object ...
+				
+			var replacer_obj = {
+				ROW_COUNT : rs_data.size(),
+				COL_COUNT : columns.length,
+				DATE: Y.DataType.Date.format( new Date(), { format: this.get("dateFormat") || this.dateFormat }),
+				TIME: Y.DataType.Date.format( new Date(), { format: this.get("timeFormat") || this.timeFormat })	
+			};	
+		//
+		//  Process the TH part 
+		//			
+			if ( foot_cfg.heading ) {
+				cspan = foot_cfg.heading.colspan || cspan;
+				tfoot_th = this.fnReplace( this.TH_TEMPLATE, {
+					colspan: cspan,
+					linerClass: this._cssPrefix+'-liner ' + (foot_cfg.heading.className || ''),
+					content: this.fnReplace( foot_cfg.heading.label, replacer_obj )
+				});
+			}	
+			
+		//
+		//  Make an array for the remainder TD's in the Footer 
+		//
+			var num_tds = columns.length - cspan;
+			//Y.log('num_tds=' + num_tds);
+			
+			var td_html = [];	// an array of objects to hold footer TD (non-TH!) data 
+			
+			for(var i=cspan; i<columns.length; i++) {
+				var titem = columns[i];
+				td_html.push({
+					index:		i, 
+					key:		titem.key, 
+					td:			null, 
+					className:	titem.className || '',
+					formatter:	titem.formatter || ''
+				});
+			}
+		
+		//
+		//  Augment the Footer TD's, by inserting computed values from 'footer' config
+		//
+		//   Note: Users may enter footer 'columns' in non-ascending order, thus
+		//         necessitating the search for column key ...
+		//	
+			Y.Array.each( foot_cols, function(fitem){
+				var imatch = -1;
+				Y.Array.some( td_html, function(item,index) {
+					if ( item.key === fitem.key ) { 
+						imatch = index; 
+						return true;	// true ends the loop ... so this is 'find a first'
+					}
+				});
+				
+				if ( imatch !== -1) 
+					td_html[imatch].td = this.formatFootCell( td_html[imatch], fitem );
+				
+			}, this);
+		
+		//
+		//  and Build out the TD string ... looping over the non-TH columns
+		//	
+			tfoot_td = '';
+			Y.Array.each( td_html, function(item){
+				item.td = item.td || '';	// if nothing defined, fill with ''
+
+				tfoot_td += this.fnReplace( this.TD_TEMPLATE, {
+						linerClass: (item.className || '') + ' '+this._cssPrefix+'-liner',
+						content: item.td
+					}); 				
+				
+			}, this);
+
+		//
+		//  Now construct the TR and the outer TFOOT and add it
+		//	
+			var tr = this.fnReplace( this.TR_TEMPLATE, {
+				rowClass: '',
+				th_content: tfoot_th,
+				td_content: tfoot_td
+			});
+			
+			
+			this._tfootNode = tfoot = Y.Node.create( this.fnReplace(this.TFOOT_TEMPLATE,{
+				content: tr,
+				footClass: foot_cfg.className || this._cssPrefix+'-ft'
+			}));
+
+			//table.insertBefore( tfoot, table.one('>tbody') );
+			//table.appendChild( tfoot );
+			table.append( tfoot );
+
+		//
+		//  now that things are built, subscribe bindings
+		//			
+			this.bindUI();
+			
+			return this;
+		},
+		
+		
+	// --------------------------------------------------------------------------------
+	// Protected properties and methods
+	// --------------------------------------------------------------------------------
+		
+		_cssPrefix: 'yui3-datatable',
+		
+		/**
+		Helper function to find the column index given the column 'key' on input.
+		(this is a hack until DataTable provides this ...)
+				 
+		@method _getColumnIndex
+		@param {String} colKey The column key name
+		@protected
+  		**/
+		_getColumnIndex: function(colKey) {
+			var columns = this.source.get('columns');
+
+			//  find the index for the given colKey	
+			var cindex = -1;	
+			columns.some( function(item,index){ 
+				if( item.key === colKey) {					
+					cindex = index;					
+					return true;
+				} 
+				else
+					return false;
+			});
+			
+			return cindex;			
+		}
+		
+		
+	});
+ 
+ 
+ //
+ //  ================ ... now back to our regularly scheduled program  ==============================
+ //
+ 
+	var jsArray = [
+		{ pkey:1,  pint:27052,  pdbl:331.578947368,  ptxt: 'ilbchhkoioffkeagjlgxdgwls',  pdt: '1988-01-10 12:20:38' },
+		{ pkey:2,  pint:21960,  pdbl:32.9333333333,  ptxt: 'zfajuixzoieoonavkdbhpumro',  pdt: '2009-09-27 19:34:31' },
+		{ pkey:3,  pint:29027,  pdbl:720.263157895,  ptxt: 'hcifbwnflcslxdpzkftxwizbo',  pdt: '1984-12-28 06:57:07' },
+		{ pkey:4,  pint:23525,  pdbl:105.605633803,  ptxt: 'iqqwvbyonwscvdipaexaflxjy',  pdt: '1994-06-04 13:51:29' },
+		{ pkey:5,  pint:25290,  pdbl:114.00896861,  ptxt: 'cwxblkydntgvjhaghgsfqrzmc',  pdt: '1972-03-06 11:53:25' },
+		{ pkey:6,  pint:941,  pdbl:44.9918367347,  ptxt: 'fgldkzxruhyvngbgmrxlezhbg',  pdt: '2004-02-05 07:05:56' },
+		{ pkey:7,  pint:25934,  pdbl:267.204081633,  ptxt: 'xlvvcqcblqinwufugjtnlaxkk',  pdt: '1972-06-23 10:33:47' },
+		{ pkey:8,  pint:15417,  pdbl:2922.5,  ptxt: 'ytebuqscdpxjjdtdredopnzui',  pdt: '1998-09-03 20:13:14' },
+		{ pkey:9,  pint:20451,  pdbl:3.65240641711,  ptxt: 'jfhbhlqeuahndzsgnhuncdscd',  pdt: '1987-07-08 01:20:40' },
+		{ pkey:10,  pint:19159,  pdbl:34.7685950413,  ptxt: 'sqcjvwjdkncdupkocnrvpvvim',  pdt: '1985-05-20 16:19:09' },
+		{ pkey:11,  pint:16113,  pdbl:933.24,  ptxt: 'whkgkvtmyocjcfwuamqwuczhx',  pdt: '1990-06-15 20:48:50' },
+		{ pkey:19,  pint:21423,  pdbl:175.124137931,  ptxt: 'ltktfcvlzzbkrpmmhzhvzrnyu',  pdt: '1983-12-25 03:20:40' },
+		{ pkey:20,  pint:26078,  pdbl:23.8571428571,  ptxt: 'vvzrgyrijixwvfwcavtntojih',  pdt: '1996-06-03 19:41:53' }
+	]; 	
+
+
+	var fmtComma2 = function(o) {
+		return Y.DataType.Number.format( o.value, {thousandsSeparator:",", decimalPlaces:2} );
+	}
+
+ 	var cols = [	
+		{ key: "pkey", label: "pkey" }, 
+		{ key: "ptxt", label: "Random Text" }, 
+		{ key: "pdt", label: "Random Date/Time" },  
+		{ key: "pdbl", label: "Random Float", className:'align-right', formatter:fmtComma2 },  
+		{ key: "pint", label: "Random Int", className:'align-right', formatter:fmtComma2 } 
+	];
+  
+
+
+	var table = new Y.DataTable({
+	    columns: cols,
+	    data: jsArray, 
+	    
+	    footerView: myFooterView,
+			    
+	 // Add a new Attribute to hold the 'footer' config ...    
+	    ATTRS: {
+	    	footer: {
+	    		value: 		null,
+			    validator: 	function(val) {
+					    	    return Y.Lang.isObject(val);   //TODO:  Nead to write a real validator here
+			   				 }
+	    	}
+	    }
+  	});
+
+
+//
+//  define the "footer" configs in ...
+//
+	table.set( 'footer', {
+		heading: { 
+			colspan:	2, 
+			label:		"Totals for {ROW_COUNT} Records : ", 
+			className:	"align-right" 
+		},
+		columns: [
+			{ key:'pdbl', calc:"max {max}", className:"align-right" },
+			{ key:'pint', calc:"{SUM}", className:"align-right" }
+		]
+	});
+	
+	table.render('#divHere');
+
+
+// just for grins, apply classNames to the columnset ... don't have method for this yet
+//    ... probably shouldn't do it this way
+
+	table.addClasses = function(cols) {
+		var rows = this.get('data');
+			
+		rows.each( function(ritem, rindex) {
+			for(var i=0; i<cols.length; i++) {
+				var col=cols[i];
+				if ( col.className ) {
+					var cell = this.getCell( rindex, i);
+					cell.one('div').addClass(col.className); 
+				}
+			}
+		}, this);			
+	}
+	
+	table.addClasses(cols);
+
+	SyntaxHighlighter.highlight();			
+ 
+});
+</script>
+
+<div style="text-align:left;padding-left:1em;">
+
+	<h2>YUI DT 3.5.0PR1 - FooterView test</h2>
+
+	<div id="divHere"></div>
+
+	<br/><br/><br/><br/>
+	<div class="example">
+		You can always see the entire source code for this example by using your browser's "show page source code" capability, 
+		<br/>usually Right-Click in the browser main page. 
+		<p>Any comments or helpful recommendations can be posted on the <a href='http://yuilibrary.com/forum' target='_blank'>YUILibrary - Forum</a> where I sometimes 
+			visit under the username <a href='http://yuilibrary.com/forum/memberlist.php?mode=viewprofile&u=5872' target='_blank'>stlsmiths</a>.  Cheers!</p>
+	
+		CSS file is <a href="../dt_foot_plugin_new.css">here</a>
+		<br/><br/>
+	
+		JavaScript code ... for this DEMO page:	
+		<script type="syntaxhighlighter" class="brush:js; collapse:false;"><![CDATA[
+YUI({
+    gallery: 'gallery-2012.01.04-22-09'	// gallery build of 3.5.0PR1 ...,
+}).use('gallery-datatable-350-preview', 'view', 'datatype',  function(Y) {
+ 
+ 
+// ==================  define the footerview ...  =========================================
+
+	var myFooterView = Y.Base.create( 'tableFooter', Y.View, [], {
+		
+	//
+	//  Define some templates for the TFOOT, TR, TH, TD and default format stuff ...
+	//	
+		TD_TEMPLATE: '<td><div class="{linerClass}">{content}</div></td>',
+
+		TH_TEMPLATE: '<th colspan="{colspan}"><div class="{linerClass}">{content}</div></th>',
+
+		TR_TEMPLATE: '<tr>{th_content}{td_content}</tr>',
+
+		TFOOT_TEMPLATE: '<tfoot class="{footClass}">{content}</tfoot>',
+
+		dateFormat : "%D",
+		timeFormat : "%T",
+		
+		fnReplace : Y.Lang.sub,
+
+		/**
+		Calculates a DataSet summary item defined in 'calc' for the given colKey.
+		Currently, the 'calc' is set to lowercase ...
+		
+		Example calc settings are as follows (for given 'colKey');
+		
+			{sum}		Calculate the arithmetic sum of dataset	 
+			{min}		Calculate the minimum value within the dataset 	 
+			{max}		Calculate the maximum value within the dataset 	 
+			{avg}		Calculate the arithmetic average of the datset 	 
+			(synonyms are {mean}, {average})			
+		
+		also, non-dataset iterating calcs are;
+			{row_count}	Returns the number of rows in the dataset
+			{col_count} Returns the number of columns in the dataset (no visibility check)
+			{date}		Returns the current date (this.dateFormat setting)	
+			{time}		Returns the current time (this.timeFormat setting)	
+			
+		 // TODO:  Consider one call to this (with mult keys) for one loop thru only ...
+		 
+		 // not a really possible use case, but ...
+		 ? whatif user tries to enter calc='this is a {sum} and {min} value' ??
+
+		@method calcDatasetValue
+		@param {String} colKey  The column key name to be calculated
+		@param {String} calc    A recognizable calc setting from above 
+		@return {Float} the return value		 
+		**/
+		calcDatasetValue: function(colKey, calc) {
+			
+			var rs_data = this.source.get("data"),    // this is a modelList currently
+				lcalc = calc.toLowerCase(),
+				avg = lcalc.search(/{average}|{avg}|{mean}/i),  // a flag for knowing if averaging is to be done
+				rcalc = 0, 
+				rmin = this._realBig,
+				rmax = -this._realBig;
+		//
+		//  initial case, if non-summary item, just return it!
+		//   Note: these probably shouldn't be used in a TD column, 
+		//        but sometimes people may do this ...
+		//
+			if ( lcalc.search(/{row_count}/) !== -1 ) 	return rs_data.size();
+			if ( lcalc.search(/{col_count}/) !== -1  ) 	return this.source.get("columns").length;
+			if ( lcalc.search(/{date}/) !== -1  )		return Y.DataType.Date.format( new Date(), { format: this.get("dateFormat") || this.dateFormat });
+			if ( lcalc.search(/{time}/) !== -1  )		return Y.DataType.Date.format( new Date(), { format: this.get("timeFormat") || this.timeFormat });	
+				
+		//
+		//  If a min or max, set initial value to first
+		//				
+			if ( lcalc.search(/{min}|{max}/) !== -1 ) 
+				rcalc = parseFloat(rs_data.item(0).get(colKey) );
+			
+		//
+		//  March thru the dataset, operating on the 'calc' item
+		//
+			rs_data.each( function(item) {
+				
+				var rflt = parseFloat( item.get(colKey) );
+				
+				if ( lcalc.search(/{sum}/) !== -1 || avg !==-1 )  
+					rcalc += rflt;
+					
+				else if ( lcalc.search(/{min}/) !== -1 )
+					rcalc = Math.min( rcalc, rflt );
+					
+				else if ( lcalc.search(/{max}/) !== -1 )
+					rcalc = Math.max( rcalc, rflt );
+					
+				else
+					rcalc = calc;
+			});
+			
+		//
+		//  Post-process the data (mostly for averages) prior to returning 
+		//	
+			if ( avg !== -1 ) 
+				rcalc = ( !rs_data.isEmpty() ) ? ( parseFloat(rcalc)/parseFloat(rs_data.size()) ) : 0;
+				
+			return parseFloat(rcalc);	
+		},
+
+
+
+		formatFootCell: function( col, foot_col ) {
+
+			if ( !foot_col.calc ) return '';
+						
+			var rval = this.calcDatasetValue( foot_col.key, foot_col.calc );	// get the calculated item ...
+
+		//
+		// See if a custom formatter is defined ...
+		//   first check the footer.column for a formatter,
+		//   then use the column.formatter,
+		//   or none
+		// TODO: allow standard named formatters and/or function names {String} 
+		//
+			var fmtr = ( foot_col.formatter && Y.Lang.isFunction(foot_col.formatter) ) ? foot_col.formatter : 
+					   ( col.formatter && Y.Lang.isFunction(col.formatter) ) ? col.formatter : null;
+					   
+  			rval = ( fmtr ) ? fmtr.call( this, {value:rval} ) : rval; 	
+  
+		// this is clunky, but works ... 
+		//  add all recognized 'calc' tags (and their uppercase) to replacer object ...
+			var strs = "min,max,sum,avg,average,mean,row_count,col_count,date,time",
+				all_strs = strs.split(","),	
+				repl_obj = {};
+				
+			Y.Array.each(all_strs,function(item){
+				repl_obj[ item ] = rval;
+				repl_obj[ item.toUpperCase() ] = rval;
+			});
+		
+			return this.fnReplace( foot_col.calc, repl_obj); 			
+		},
+
+		/**
+		Called when view is initialized.  
+		Consider building the TFOOT here instead of in .render() ?
+		
+		@method initializer
+		@param {Object} config
+		@protected
+		**/
+		initializer: function(config) {
+			config || (config={});
+			this.source = config.source;
+			// Y.log('in init');
+		},
+
+
+		/**
+		Bind subscriptions onto the parent Model and/or other views ....
+		// TODO: Don't really have enough base sugar to do anything yet   
+		
+		@method bindUI
+		@protected
+		**/
+		bindUI: function() {
+	// probably should do something like on('dataChange', refreshfooter );
+	//  ... but the DT re-factor is so new, I don't know yet what the 
+	//      standard attributes / events are !
+	//
+	//		if (this.source) 
+ 	//		this.source.on('dataChange', Y.bind('_afterDataChange', this) );
+		},
+		
+		_afterDataChange: function() {
+			Y.log('afterDataChange');
+		},
+		
+		
+		
+		/**
+		Renders the TFOOT element, filling in dataset totals ...
+
+		@method render
+		@protected
+		**/
+		render: function() {
+
+			var table_cont = this.get('container'),
+				table = Y.one(table_cont),
+				table_obj = this.source,
+				columns = table_obj.get('columns'), 
+				rs_data = this.source.get("data"),  
+				foot_cfg = table_obj.get('footer'),
+				foot_cols = foot_cfg.columns,
+				tfoot_th = tfoot_td = '', 
+				tfoot, cspan = 1, i=0;
+			
+		// define a default replacer object ...
+				
+			var replacer_obj = {
+				ROW_COUNT : rs_data.size(),
+				COL_COUNT : columns.length,
+				DATE: Y.DataType.Date.format( new Date(), { format: this.get("dateFormat") || this.dateFormat }),
+				TIME: Y.DataType.Date.format( new Date(), { format: this.get("timeFormat") || this.timeFormat })	
+			};	
+		//
+		//  Process the TH part 
+		//			
+			if ( foot_cfg.heading ) {
+				cspan = foot_cfg.heading.colspan || cspan;
+				tfoot_th = this.fnReplace( this.TH_TEMPLATE, {
+					colspan: cspan,
+					linerClass: this._cssPrefix+'-liner ' + (foot_cfg.heading.className || ''),
+					content: this.fnReplace( foot_cfg.heading.label, replacer_obj )
+				});
+			}	
+			
+		//
+		//  Make an array for the remainder TD's in the Footer 
+		//
+			var num_tds = columns.length - cspan;
+			//Y.log('num_tds=' + num_tds);
+			
+			var td_html = [];	// an array of objects to hold footer TD (non-TH!) data 
+			
+			for(var i=cspan; i<columns.length; i++) {
+				var titem = columns[i];
+				td_html.push({
+					index:		i, 
+					key:		titem.key, 
+					td:			null, 
+					className:	titem.className || '',
+					formatter:	titem.formatter || ''
+				});
+			}
+		
+		//
+		//  Augment the Footer TD's, by inserting computed values from 'footer' config
+		//
+		//   Note: Users may enter footer 'columns' in non-ascending order, thus
+		//         necessitating the search for column key ...
+		//	
+			Y.Array.each( foot_cols, function(fitem){
+				var imatch = -1;
+				Y.Array.some( td_html, function(item,index) {
+					if ( item.key === fitem.key ) { 
+						imatch = index; 
+						return true;	// true ends the loop ... so this is 'find a first'
+					}
+				});
+				
+				if ( imatch !== -1) 
+					td_html[imatch].td = this.formatFootCell( td_html[imatch], fitem );
+				
+			}, this);
+		
+		//
+		//  and Build out the TD string ... looping over the non-TH columns
+		//	
+			tfoot_td = '';
+			Y.Array.each( td_html, function(item){
+				item.td = item.td || '';	// if nothing defined, fill with ''
+
+				tfoot_td += this.fnReplace( this.TD_TEMPLATE, {
+						linerClass: (item.className || '') + ' '+this._cssPrefix+'-liner',
+						content: item.td
+					}); 				
+				
+			}, this);
+
+		//
+		//  Now construct the TR and the outer TFOOT and add it
+		//	
+			var tr = this.fnReplace( this.TR_TEMPLATE, {
+				rowClass: '',
+				th_content: tfoot_th,
+				td_content: tfoot_td
+			});
+			
+			
+			this._tfootNode = tfoot = Y.Node.create( this.fnReplace(this.TFOOT_TEMPLATE,{
+				content: tr,
+				footClass: foot_cfg.className || this._cssPrefix+'-ft'
+			}));
+
+			//table.insertBefore( tfoot, table.one('>tbody') );
+			//table.appendChild( tfoot );
+			table.append( tfoot );
+
+		//
+		//  now that things are built, subscribe bindings
+		//			
+			this.bindUI();
+			
+			return this;
+		},
+		
+		
+	// --------------------------------------------------------------------------------
+	// Protected properties and methods
+	// --------------------------------------------------------------------------------
+		
+		_cssPrefix: 'yui3-datatable',
+		
+		/**
+		Helper function to find the column index given the column 'key' on input.
+		(this is a hack until DataTable provides this ...)
+				 
+		@method _getColumnIndex
+		@param {String} colKey The column key name
+		@protected
+  		**/
+		_getColumnIndex: function(colKey) {
+			var columns = this.source.get('columns');
+
+			//  find the index for the given colKey	
+			var cindex = -1;	
+			columns.some( function(item,index){ 
+				if( item.key === colKey) {					
+					cindex = index;					
+					return true;
+				} 
+				else
+					return false;
+			});
+			
+			return cindex;			
+		}
+		
+		
+	});
+ 
+ 
+ //
+ //  ================ ... now back to our regularly scheduled program  ==============================
+ //
+ 
+	var jsArray = [
+		{ pkey:1,  pint:27052,  pdbl:331.578947368,  ptxt: 'ilbchhkoioffkeagjlgxdgwls',  pdt: '1988-01-10 12:20:38' },
+		{ pkey:2,  pint:21960,  pdbl:32.9333333333,  ptxt: 'zfajuixzoieoonavkdbhpumro',  pdt: '2009-09-27 19:34:31' },
+		{ pkey:3,  pint:29027,  pdbl:720.263157895,  ptxt: 'hcifbwnflcslxdpzkftxwizbo',  pdt: '1984-12-28 06:57:07' },
+		{ pkey:4,  pint:23525,  pdbl:105.605633803,  ptxt: 'iqqwvbyonwscvdipaexaflxjy',  pdt: '1994-06-04 13:51:29' },
+		{ pkey:5,  pint:25290,  pdbl:114.00896861,  ptxt: 'cwxblkydntgvjhaghgsfqrzmc',  pdt: '1972-03-06 11:53:25' },
+		{ pkey:6,  pint:941,  pdbl:44.9918367347,  ptxt: 'fgldkzxruhyvngbgmrxlezhbg',  pdt: '2004-02-05 07:05:56' },
+		{ pkey:7,  pint:25934,  pdbl:267.204081633,  ptxt: 'xlvvcqcblqinwufugjtnlaxkk',  pdt: '1972-06-23 10:33:47' },
+		{ pkey:8,  pint:15417,  pdbl:2922.5,  ptxt: 'ytebuqscdpxjjdtdredopnzui',  pdt: '1998-09-03 20:13:14' },
+		{ pkey:9,  pint:20451,  pdbl:3.65240641711,  ptxt: 'jfhbhlqeuahndzsgnhuncdscd',  pdt: '1987-07-08 01:20:40' },
+		{ pkey:10,  pint:19159,  pdbl:34.7685950413,  ptxt: 'sqcjvwjdkncdupkocnrvpvvim',  pdt: '1985-05-20 16:19:09' },
+		{ pkey:11,  pint:16113,  pdbl:933.24,  ptxt: 'whkgkvtmyocjcfwuamqwuczhx',  pdt: '1990-06-15 20:48:50' },
+		{ pkey:19,  pint:21423,  pdbl:175.124137931,  ptxt: 'ltktfcvlzzbkrpmmhzhvzrnyu',  pdt: '1983-12-25 03:20:40' },
+		{ pkey:20,  pint:26078,  pdbl:23.8571428571,  ptxt: 'vvzrgyrijixwvfwcavtntojih',  pdt: '1996-06-03 19:41:53' }
+	]; 	
+
+
+	var fmtComma2 = function(o) {
+		return Y.DataType.Number.format( o.value, {thousandsSeparator:",", decimalPlaces:2} );
+	}
+
+ 	var cols = [	
+		{ key: "pkey", label: "pkey" }, 
+		{ key: "ptxt", label: "Random Text" }, 
+		{ key: "pdt", label: "Random Date/Time" },  
+		{ key: "pdbl", label: "Random Float", className:'align-right', formatter:fmtComma2 },  
+		{ key: "pint", label: "Random Int", className:'align-right', formatter:fmtComma2 } 
+	];
+  
+
+
+	var table = new Y.DataTable({
+	    columns: cols,
+	    data: jsArray, 
+	    
+	    footerView: myFooterView,
+			    
+	 // Add a new Attribute to hold the 'footer' config ...    
+	    ATTRS: {
+	    	footer: {
+	    		value: 		null,
+			    validator: 	function(val) {
+					    	    return Y.Lang.isObject(val);   //TODO:  Nead to write a real validator here
+			   				 }
+	    	}
+	    }
+  	});
+
+
+//
+//  define the "footer" configs in ...
+//
+	table.set( 'footer', {
+		heading: { 
+			colspan:	2, 
+			label:		"Totals for {ROW_COUNT} Records : ", 
+			className:	"align-right" 
+		},
+		columns: [
+			{ key:'pdbl', calc:"max {max}", className:"align-right" },
+			{ key:'pint', calc:"{SUM}", className:"align-right" }
+		]
+	});
+	
+	table.render('#divHere');
+
+
+// just for grins, apply classNames to the columnset ... don't have method for this yet
+//    ... probably shouldn't do it this way
+
+	table.addClasses = function(cols) {
+		var rows = this.get('data');
+			
+		rows.each( function(ritem, rindex) {
+			for(var i=0; i<cols.length; i++) {
+				var col=cols[i];
+				if ( col.className ) {
+					var cell = this.getCell( rindex, i);
+					cell.one('div').addClass(col.className); 
+				}
+			}
+		}, this);			
+	}
+	
+	table.addClasses(cols);
+
+});	]]></script>
+	
+	</div>	
+	
+	
+	
+</div>
+
+</body>
+</html>
